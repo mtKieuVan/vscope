@@ -1,4 +1,4 @@
-.PHONY: clean
+.PHONY: lint clean
 
 init:
 	@TOOLDIR=$$(pwd); \
@@ -10,4 +10,7 @@ clean:
 	@cp ~/.bashrc ./.bashrc
 	@sed -i '/TOOLDIR/d;/toolbox\.sh/d' ~/.bashrc
 	@rm ./init
+
+lint:
+	
 

@@ -1,4 +1,4 @@
-# VSCOPE 
+# Vscope
 
 A command-line tool that helps developers view different slices of code in the codebase.
 
@@ -14,39 +14,23 @@ A command-line tool that helps developers view different slices of code in the c
 2. Python >= 3.7
 
 
-## Components:
+## Code Base:
 
-1. Class Line: represents a line in file
-  - has: file name, line number, patten for highlight part    #todo                                     
-  - when printed it will be: `<file_name>:<line> <content>`   #todo                                     
+**`class Line`** - represents a line of code with file name, line number, and optional highlight pattern. When printed, shows `<file_name>:<line_number> <content>`. Behaves like a string and provides `up()` / `down()` methods to move between lines, caching the last opened file for fast access.
 
-2. get_match(): given pattern, search for the lines match with the pattern in current directory recursively
-=> using grep command to search and get output format include file and line number #todo
+**`get_match()`** - given pattern, search for the lines match with the pattern in current directory recursively. This function uses grep command to search and get output format include file and line number.
 
-3. Class Statement: represents a source code statement
-  - has a list of *line*s that is part of statement structure, not statement content
-  - has a prototype which is a pattern when is used in its parent stataements
-  - has a list of parents which are another statements call to it
-    - parent list is lazy which means the parent list is UNSET until it is get
-    - parent list can also be UNSETTABLE which means the statement does not have any parent
-  - has a wrapper which are a statement that conains it.
-    - besides, wrapper can be UNSET mean not set yet, or be UNSETTABLE means the satement does not have wrapper
-    - wrapper is lazy, mean if get wrapper, if wrapper is UNSET, the statement will as the *language* to search for its wrapper
-    - get wrapper is recursively which means if a wrapper statement was get, that wrapper sattement will auto trigger get wrapper
-  - refer the the *language* of it
+**`class Statement`** – represents a source code statement with structural and contextual links.  
+- Contains a list of `Line`s (structure, not content), a `prototype` pattern used when other statements reference it, and a reference to its _language_.  
+- Has a list of **`parents`** — statements that call it via its `prototype`, and a single **`wrapper`** — the statement that contains it.  
+- Both `parents` and `wrapper` are lazy and can be **UNSET** (not yet resolved) or **UNSETTABLE** (known to have none); when accessed, they are resolved recursively through the owning _language_.
 
-4. Class Language: represents a programing language parser which can search and verify for source code concepts 
+**`class Language`**: represents a programing language parser interface which can search and verify for source code concepts 
   - has a list of extension which detect if a file is in this langauge or not
   - get_statement() : given a line, return a *statement* that the line be in(just list lines prototype).
 
-5. Class Result: a list of *line* in order that is the ouput result will print to user
+**`class Result`**: a list of *line* in order that is the ouput result will print to user
 
-
-6. get_satetment() for C language:  #todo
-   - if the line end with \ loop from line to up until has #define at first then loop from line to
-     down until reach the line without end with \
-
-7. Logging: each part of code wil have a loger
 
 
 
@@ -122,7 +106,9 @@ Use cases:
 
 ## For developer
 
-1. Set environment varialbe to indicate log level and 
+1. Run `make lint` to auto run pytlint for python source code
+
+2. Set environment varialbe to indicate log level and 
 
 
 ## Issues
@@ -132,3 +118,15 @@ Use cases:
 
 ## Notion:
 - Commit prefix can be: DSG, IMP, BUG, FIX, MIS
+
+---
+```
+
+Nếu dòng kết thúc bằng \ ⇒ _get_macro_block()
+
+Ngược lại  ⇒ get_define_block()
+- Tìm dòng bắt đầu là dòng không có khoảng trắng ở đầu và không có dáu ; ở cuối
+
+
+
+```
