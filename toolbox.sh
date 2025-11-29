@@ -25,6 +25,16 @@ v() {
         line_number="${BASH_REMATCH[2]}"
     fi
 
+    # If the keyword is a path that exists, open it directly.
+    if [ -e "$keyword" ]; then
+        if [ -n "$line_number" ]; then
+            vim "+$line_number" "$keyword"
+        else
+            vim "$keyword"
+        fi
+        return 0
+    fi
+
     # Search for all files match the keyword (except .git, node_modules, build,…)
     local files
     readarray -d '' files < <(find . -type f \
