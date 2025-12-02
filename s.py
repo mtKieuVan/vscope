@@ -241,10 +241,20 @@ class Block:
 
     def fill_down_until(self, pattern: str, stop_pattern: str = None) -> bool:
         if not self.lines:
-            return
+            return False
 
-        cursor = self.lines[-1].clone()
+        # Find the last continuous line from the start of the block
+        current_continuous_line = self.lines[0]
+        for i in range(1, len(self.lines)):
+            if (self.lines[i].file_name == current_continuous_line.file_name and
+                self.lines[i].index == current_continuous_line.index + 1):
+                current_continuous_line = self.lines[i]
+            else:
+                break
+        
+        cursor = current_continuous_line.clone()
 
+        # If current_continuous_line already matches the pattern, we're done
         if cursor.match(pattern):
             return True
 
@@ -264,6 +274,10 @@ class Block:
             return False
 
         cursor = self.lines[0].clone()
+
+        if cursor.match(pattern):
+            self.start = self.lines[0]
+            return True
 
         while cursor.move_up():
             if stop_pattern and cursor.match(stop_pattern):
@@ -458,8 +472,29 @@ class Cpp (Language):
 
         return blk
 
-    def get_wrapper(self, start: Line, end: Line) -> Block:
-        return None
+    def get_wrapper(self, line: Line) -> Block:
+        return self._get_function_wrapper(line)
+
+    def _get_function_wrapper(self, line: Line) -> Block:
+
+        blk = Block(cpp, line) 
+
+        function_start_pattern = r"^(?!.*\)\s*;)\s*[A-Za-z_][\w\s\*\(\)]*\s+(\w*::)*\w+\s*\("
+        
+        if not blk.get_start_with(function_start_pattern):
+            return None
+
+        # blk.start is now the function signature line.
+        # Now fill down to get the full signature until the opening brace.
+        if not blk.fill_down_until(r"{", stop_pattern=r";"):
+            # This is likely a function declaration, not a definition.
+            return None
+
+        # Now get the closing brace for the function
+        end_brace_pattern = blk.start.get_indentation_pattern(r"}.*")
+        blk.get_end_with(end_brace_pattern)
+        
+        return blk
 
     def get_caller(self, interface: str) -> Block:
         return None
@@ -475,7 +510,7 @@ def search_grep(pattern:str, path:str):
             result.add(line)
         result.show()
 
-def search_def(pattern:str) -> list[Line]:
+def search_def(pattern:str):
     lines = get_match(pattern, "../sipp")
 
     if not lines:
@@ -492,30 +527,49 @@ def search_def(pattern:str) -> list[Line]:
             result.add_block(res)
     result.show()
       
-def search_wrapper(pattern:str) -> list[Line]:
-    return None
+def search_wrapper(pattern:str):
+
+    lines = get_match(pattern, "../sipp")
+
+    if not lines:
+        return
+
+    for l in lines:
+        lang = Language.get_by_filename(l.file_name)
+
+        if not lang:
+            continue
+
+        res = lang.get_wrapper(l)
+        if res:
+            result.add_block(res)
+    result.show()
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Search for definitions in code.")
+    parser = argparse.ArgumentParser(
+        description="Search for code. By default, it searches for a function wrapper. Use 'def' or 'grep' for other searches.",
+        epilog="Examples:\n  s my_function_name\n  s def my_variable\n  s grep 'some text' -f /path/to/search",
+        formatter_class=argparse.RawTextHelpFormatter
+    )
     parser.add_argument("-q", "--quiet", action="store_true", help="Suppress file and line number prefixes in output.")
-    subparsers = parser.add_subparsers(dest="command", help="Available commands")
-
-    # Subparser for the 'def' command
-    def_parser = subparsers.add_parser("def", help="Search for definitions.")
-    def_parser.add_argument("pattern", type=str, help="The pattern to search for.")
-
-    # Subparser for the 'grep' command
-    grep_parser = subparsers.add_parser("grep", help="Search for a pattern in a given path.")
-    grep_parser.add_argument("pattern", type=str, help="The pattern to search for.")
-    grep_parser.add_argument("path", type=str, nargs='?', default="../sipp", help="The path to search in.")
+    parser.add_argument("-f", "--path", default="../sipp", help="Path to search in for 'grep' command.")
+    
+    parser.add_argument("command_or_pattern", help="Command ('def', 'grep') or a pattern for a wrapper search.")
+    parser.add_argument("pattern", nargs="?", help="Pattern for 'def' or 'grep' command.")
 
     args = parser.parse_args()
 
     QUIET = args.quiet
 
-    if args.command == "def":
+    if args.command_or_pattern == "def":
+        if not args.pattern:
+            parser.error("'def' command requires a pattern.")
         search_def(args.pattern)
-    elif args.command == "grep":
+    elif args.command_or_pattern == "grep":
+        if not args.pattern:
+            parser.error("'grep' command requires a pattern.")
         search_grep(args.pattern, args.path)
     else:
-        parser.print_help()
+        if args.pattern:
+            parser.error(f"Too many arguments. Did you mean 'def {args.command_or_pattern}' or 'grep {args.command_or_pattern}'?")
+        search_wrapper(args.command_or_pattern)
