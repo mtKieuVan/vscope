@@ -8,7 +8,7 @@ import os
 from typing import Union
 
 def debug(fmt):
-    print(f"Debug: {fmt}")
+    #print(f"Debug: {fmt}")
     return
 
 QUIET = False
@@ -117,9 +117,14 @@ class Line:
         if other.highlight:
             self.highlight = other.highlight
 
-def get_match(pattern:str, place: str) -> list[Line]:
+def get_match(pattern:str, place: str, extensions: list[str] = None) -> list[Line]:
 
-    grep_result = subprocess.run(["grep", "-RHn", pattern, place], capture_output=True, text=True)
+    cmd = ["grep", "-ERHn", pattern, place]
+    if extensions:
+        for ext in extensions:
+            cmd.insert(1, f"--include=*{ext}")
+
+    grep_result = subprocess.run(cmd, capture_output=True, text=True)
 
     if grep_result.returncode != 0:
         return None
@@ -371,6 +376,9 @@ class Language (ABC):
     @abstractmethod
     def get_define(line:Line, pattern:str) -> Block : ...
 
+    @abstractmethod
+    def extract_function_name(self, line: Line) -> str: ...
+
     @classmethod
     def register(cls):
         instance = cls()
@@ -395,6 +403,22 @@ class Language (ABC):
 
 class Cpp (Language):
     extensions = [".c", ".cpp", ".h", ".hpp"]
+    keywords = {
+        "alignas", "alignof", "and", "and_eq", "asm", "atomic_cancel", "atomic_commit", 
+        "atomic_noexcept", "auto", "bitand", "bitor", "bool", "break", "case", "catch",
+        "char", "char8_t", "char16_t", "char32_t", "class", "compl", "concept", "const", 
+        "consteval", "constexpr", "constinit", "const_cast", "continue", "co_await", 
+        "co_return", "co_yield", "decltype", "default", "delete", "do", "double", 
+        "dynamic_cast", "else", "enum", "explicit", "export", "extern", "false", 
+        "float", "for", "friend", "goto", "if", "inline", "int", "long", "mutable", 
+        "namespace", "new", "noexcept", "not", "not_eq", "nullptr", "operator", "or", 
+        "or_eq", "private", "protected", "public", "reflexpr", "register", 
+        "reinterpret_cast", "requires", "return", "short", "signed", "sizeof", "static", 
+        "static_assert", "static_cast", "struct", "switch", "synchronized", "template", 
+        "this", "thread_local", "throw", "true", "try", "typedef", "typeid", "typename", 
+        "union", "unsigned", "using", "virtual", "void", "volatile", "wchar_t", "while",
+        "xor", "xor_eq"
+    }
 
 
     def get_define(self, line: Line, pattern: str) -> Block:
@@ -422,6 +446,20 @@ class Cpp (Language):
         if line.match(r"^\s*(\w+\s+)?\w+\s+\w+\s*;$"):
             return self._get_define_field_struct_union(line)
         
+        return None
+
+    def extract_function_name(self, line: Line) -> str:
+        content = line.content
+        last_paren_index = content.rfind('(')
+        if last_paren_index == -1:
+            return None
+        
+        before_paren = content[:last_paren_index]
+        
+        match = re.search(r"(\b\w+(?:::\w+)*)\s*$", before_paren.strip())
+        if match:
+            return match.group(1).split("::")[-1]
+
         return None
 
     def _get_define_macro(self, line: Line) -> Block:
@@ -477,10 +515,14 @@ class Cpp (Language):
 
     def _get_function_wrapper(self, line: Line) -> Block:
 
-        blk = Block(cpp, line) 
-
         function_start_pattern = r"^(?!.*\)\s*;)\s*[A-Za-z_][\w\s\*\(\)]*\s+(\w*::)*\w+\s*\("
         
+        # If the line itself is a function definition, it can't have a wrapper in this context.
+        if line.match(function_start_pattern):
+            return None
+
+        blk = Block(cpp, line) 
+
         if not blk.get_start_with(function_start_pattern):
             return None
 
@@ -545,17 +587,121 @@ def search_wrapper(pattern:str):
             result.add_block(res)
     result.show()
 
+def get_caller_blocks(pattern: str, search_path: str, extensions: list[str] = None) -> list[tuple[Block, Line]]:
+    debug(f"get_caller_blocks: Searching for pattern '{pattern}' in '{search_path}' with extensions: {extensions}")
+    lines = get_match(pattern, search_path, extensions)
+    if not lines:
+        debug(f"get_caller_blocks: No matches found for '{pattern}'")
+        return []
+
+    caller_info_list = []
+    seen_block_ids = set() # To store IDs of wrapper blocks already added
+
+    for line in lines: # `line` here is the Line object where `pattern` was found
+        lang = Language.get_by_filename(line.file_name)
+        if not lang:
+            debug(f"get_caller_blocks: No language found for file '{line.file_name}'")
+            continue
+
+        wrapper_block = lang.get_wrapper(line)
+        if not wrapper_block or not wrapper_block.start:
+            debug(f"get_caller_blocks: No wrapper block found for line '{line.content.strip()}' (where pattern was found)")
+            continue
+            
+        block_id = f"{wrapper_block.start.file_name}:{wrapper_block.start.index}"
+        if block_id not in seen_block_ids:
+            caller_info_list.append((wrapper_block, line)) # Store both the wrapper block and the call line
+            seen_block_ids.add(block_id)
+            debug(f"get_caller_blocks: Found caller block '{block_id}' for '{pattern}' (content: {wrapper_block.start.content.strip()}), called from {line.file_name}:{line.index + 1}")
+            
+    debug(f"get_caller_blocks: Returning {len(caller_info_list)} caller blocks for '{pattern}'")
+    return caller_info_list
+
+def build_call_tree(pattern: str, search_path: str, visited: set, extensions: list[str] = None, level: int = 0, max_level: int = 10) -> dict:
+    debug(f"build_call_tree: Processing pattern '{pattern}', level {level}, max_level {max_level}, visited: {list(visited)}")
+    
+    if level >= max_level:
+        debug(f"build_call_tree: Max level {max_level} reached. Stopping recursion for '{pattern}'.")
+        return {"max_level_reached": pattern}
+
+    if pattern in visited:
+        debug(f"build_call_tree: Recursive call detected for '{pattern}'")
+        return {"recursive_call": pattern}
+        
+    visited.add(pattern)
+
+    # For level 2 and beyond, search for the function name as a whole word followed by '(',
+    # to ensure we are finding function calls, not just string matches.
+    search_pattern = pattern
+    if level > 0:
+        search_pattern = r"\b" + re.escape(pattern) + r"\b.*\("
+
+    caller_info_list = get_caller_blocks(search_pattern, search_path, extensions)
+    if not caller_info_list:
+        visited.remove(pattern)
+        debug(f"build_call_tree: No callers found for '{pattern}'")
+        return {}
+
+    tree = {}
+    for wrapper_block, call_line in caller_info_list: # Unpack wrapper_block and call_line
+        caller_name = wrapper_block.lang.extract_function_name(wrapper_block.start)
+        if not caller_name:
+            debug(f"build_call_tree: Could not extract caller name from '{wrapper_block.start.content.strip()}' (wrapper block for {pattern})")
+            continue
+
+        if caller_name in wrapper_block.lang.keywords:
+            debug(f"build_call_tree: Skipping keyword '{caller_name}' found as a potential caller.")
+            continue
+
+        # Use the call_line for the location in the tree output
+        call_loc = f"({call_line.file_name}:{call_line.index + 1})"
+        
+        subtree = build_call_tree(caller_name, search_path, visited, wrapper_block.lang.extensions, level + 1, max_level)
+        
+        node_key = f"{caller_name} {call_loc}"
+        tree[node_key] = subtree
+        
+    visited.remove(pattern)
+    debug(f"build_call_tree: Finished processing '{pattern}'")
+    return tree
+
+def print_dict_tree(tree: dict, prefix=""):
+    items = list(tree.items())
+    for i, (key, subtree) in enumerate(items):
+        is_last = (i == len(items) - 1)
+        connector = "└── " if is_last else "├── "
+        print(f"{prefix}{connector}{key}")
+
+        if subtree:
+            new_prefix = prefix + ("    " if is_last else "│   ")
+            if "recursive_call" in subtree:
+                print(f"{new_prefix}└── [recursive call to {subtree['recursive_call']}]")
+            elif "max_level_reached" in subtree:
+                print(f"{new_prefix}└── [max level reached]")
+            else:
+                print_dict_tree(subtree, new_prefix)
+
+def search_tree(pattern: str, max_level: int = 5):
+    debug(f"search_tree: Starting for pattern '{pattern}' with max level {max_level}")
+    search_path = "../sipp"
+    print(f"Call tree for '{pattern}':")
+    print(pattern)
+    tree = build_call_tree(pattern, search_path, set(), extensions=None, level=0, max_level=max_level)
+    print_dict_tree(tree)
+    debug(f"search_tree: Finished for pattern '{pattern}'")
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Search for code. By default, it searches for a function wrapper. Use 'def' or 'grep' for other searches.",
-        epilog="Examples:\n  s my_function_name\n  s def my_variable\n  s grep 'some text' -f /path/to/search",
+        epilog="Examples:\n  s my_function_name\n  s def my_variable\n  s grep 'some text' -f /path/to/search\n  s tree my_function -l 5",
         formatter_class=argparse.RawTextHelpFormatter
     )
     parser.add_argument("-q", "--quiet", action="store_true", help="Suppress file and line number prefixes in output.")
     parser.add_argument("-f", "--path", default="../sipp", help="Path to search in for 'grep' command.")
+    parser.add_argument("-l", "--level", type=int, default=5, help="Maximum recursion depth for 'tree' command.")
     
-    parser.add_argument("command_or_pattern", help="Command ('def', 'grep') or a pattern for a wrapper search.")
-    parser.add_argument("pattern", nargs="?", help="Pattern for 'def' or 'grep' command.")
+    parser.add_argument("command_or_pattern", help="Command ('def', 'grep', 'tree') or a pattern for a wrapper search.")
+    parser.add_argument("pattern", nargs="?", help="Pattern for 'def', 'grep', or 'tree' command.")
 
     args = parser.parse_args()
 
@@ -569,6 +715,10 @@ if __name__ == "__main__":
         if not args.pattern:
             parser.error("'grep' command requires a pattern.")
         search_grep(args.pattern, args.path)
+    elif args.command_or_pattern == "tree":
+        if not args.pattern:
+            parser.error("'tree' command requires a pattern.")
+        search_tree(args.pattern, args.level)
     else:
         if args.pattern:
             parser.error(f"Too many arguments. Did you mean 'def {args.command_or_pattern}' or 'grep {args.command_or_pattern}'?")
