@@ -51,25 +51,28 @@ class Line:
         self.highlight = highlight
 
     def clone(self):
-        return Line(self.file_name, self.index, self.content, self.highlight)
+        cloned = Line(self.file_name, self.index, self.content, self.highlight)
+        return cloned
 
     def __eq__(self, other):
         return self.file_name == other.file_name and self.index == other.index
 
     def __str__(self) -> str:
-
-        RED = "[0;31m"
-        RESET = "[0m"
-
-        if self.highlight:
-            content = re.sub(self.highlight, f"{RED}\\g<0>{RESET}", self.content)
-        else:
-            content = self.content
+        content = self.get_highlighted_content()
 
         if QUIET:
             return content
         else:
            return f"{self.file_name}:{self.index + 1:<5}: {content}"
+
+    def get_highlighted_content(self) -> str:
+        RED = "\033[0;31m"
+        RESET = "\033[0m"
+
+        if self.highlight:
+            return re.sub(self.highlight, f"{RED}\\g<0>{RESET}", self.content)
+        return self.content
+
 
     def get_indentation_pattern(self, suffix: str) -> str:
         match = re.match(r"^(\s*)", self.content)
@@ -140,7 +143,7 @@ def get_match(pattern:str, place: str, extensions: list[str] = None) -> list[Lin
         line_num = int(line_num.strip())
         content = content.rstrip()
 
-        res.append(Line(file_name, line_num - 1, content, highlight=pattern))
+        res.append(Line(file_name, line_num - 1, content))
 
     return res
 
@@ -549,6 +552,7 @@ def search_grep(pattern:str, path:str):
     lines = get_match(pattern, path)
     if lines:
         for line in lines:
+            line.highlight = pattern
             result.add(line)
         result.show()
 
@@ -563,6 +567,8 @@ def search_def(pattern:str):
 
         if not lang:
             continue
+
+        l.highlight = pattern
 
         res = lang.get_define(l, pattern)
         if res:
@@ -581,6 +587,8 @@ def search_wrapper(pattern:str):
 
         if not lang:
             continue
+
+        l.highlight = pattern
 
         res = lang.get_wrapper(l)
         if res:
@@ -617,78 +625,113 @@ def get_caller_blocks(pattern: str, search_path: str, extensions: list[str] = No
     debug(f"get_caller_blocks: Returning {len(caller_info_list)} caller blocks for '{pattern}'")
     return caller_info_list
 
-def build_call_tree(pattern: str, search_path: str, visited: set, extensions: list[str] = None, level: int = 0, max_level: int = 10) -> dict:
-    debug(f"build_call_tree: Processing pattern '{pattern}', level {level}, max_level {max_level}, visited: {list(visited)}")
-    
-    if level >= max_level:
-        debug(f"build_call_tree: Max level {max_level} reached. Stopping recursion for '{pattern}'.")
-        return {"max_level_reached": pattern}
+def print_top_down_tree(caller_id: str, callees_of: dict, nodes: dict, visited_ids: set, prefix: str):
+    if caller_id in visited_ids:
+        return
+    visited_ids.add(caller_id)
 
-    if pattern in visited:
-        debug(f"build_call_tree: Recursive call detected for '{pattern}'")
-        return {"recursive_call": pattern}
-        
-    visited.add(pattern)
+    if caller_id not in callees_of:
+        return
 
-    # For level 2 and beyond, search for the function name as a whole word followed by '(',
-    # to ensure we are finding function calls, not just string matches.
-    search_pattern = pattern
-    if level > 0:
-        search_pattern = r"\b" + re.escape(pattern) + r"\b.*\("
-
-    caller_info_list = get_caller_blocks(search_pattern, search_path, extensions)
-    if not caller_info_list:
-        visited.remove(pattern)
-        debug(f"build_call_tree: No callers found for '{pattern}'")
-        return {}
-
-    tree = {}
-    for wrapper_block, call_line in caller_info_list: # Unpack wrapper_block and call_line
-        caller_name = wrapper_block.lang.extract_function_name(wrapper_block.start)
-        if not caller_name:
-            debug(f"build_call_tree: Could not extract caller name from '{wrapper_block.start.content.strip()}' (wrapper block for {pattern})")
-            continue
-
-        if caller_name in wrapper_block.lang.keywords:
-            debug(f"build_call_tree: Skipping keyword '{caller_name}' found as a potential caller.")
-            continue
-
-        # Use the call_line for the location in the tree output
-        call_loc = f"({call_line.file_name}:{call_line.index + 1})"
-        
-        subtree = build_call_tree(caller_name, search_path, visited, wrapper_block.lang.extensions, level + 1, max_level)
-        
-        node_key = f"{caller_name} {call_loc}"
-        tree[node_key] = subtree
-        
-    visited.remove(pattern)
-    debug(f"build_call_tree: Finished processing '{pattern}'")
-    return tree
-
-def print_dict_tree(tree: dict, prefix=""):
-    items = list(tree.items())
-    for i, (key, subtree) in enumerate(items):
-        is_last = (i == len(items) - 1)
+    callees = callees_of.get(caller_id, [])
+    for i, callee_info in enumerate(callees):
+        is_last = (i == len(callees) - 1)
         connector = "└── " if is_last else "├── "
-        print(f"{prefix}{connector}{key}")
+        
+        callee_name = callee_info['name']
+        call_line = callee_info['line']
+        
+        callee_id = None
+        for n_id, n_info in nodes.items():
+            if n_info['name'] == callee_name:
+                callee_id = n_id
+                break
 
-        if subtree:
+        print(f"{prefix}{connector}{call_line.get_highlighted_content().strip()} ({call_line.file_name}:{call_line.index+1})")
+        
+        if callee_id:
             new_prefix = prefix + ("    " if is_last else "│   ")
-            if "recursive_call" in subtree:
-                print(f"{new_prefix}└── [recursive call to {subtree['recursive_call']}]")
-            elif "max_level_reached" in subtree:
-                print(f"{new_prefix}└── [max level reached]")
-            else:
-                print_dict_tree(subtree, new_prefix)
+            print_top_down_tree(callee_id, callees_of, nodes, visited_ids, new_prefix)
 
-def search_tree(pattern: str, max_level: int = 5):
+
+def search_tree(pattern: str, max_level: int = 10):
     debug(f"search_tree: Starting for pattern '{pattern}' with max level {max_level}")
     search_path = "../sipp"
+
+    nodes = {}
+    callers_of = {}
+
+    queue = [(pattern, 0, None)] # (pattern, level, extensions)
+    processed_patterns = {pattern}
+
+    while queue:
+        current_pattern, level, current_extensions = queue.pop(0)
+
+        if level >= max_level:
+            continue
+
+        search_p = current_pattern if level == 0 else r"\b" + re.escape(current_pattern) + r"\b.*\("
+        
+        caller_info_list = get_caller_blocks(search_p, search_path, extensions=current_extensions)
+        
+        if not caller_info_list:
+            continue
+
+        if current_pattern not in callers_of:
+            callers_of[current_pattern] = []
+
+        for wrapper_block, call_line in caller_info_list:
+
+            caller_name = wrapper_block.lang.extract_function_name(wrapper_block.start)
+            if not caller_name or caller_name in wrapper_block.lang.keywords:
+                continue
+            
+            caller_id = f"{wrapper_block.start.file_name}:{wrapper_block.start.index}"
+
+            if caller_id not in nodes:
+                nodes[caller_id] = {'name': caller_name, 'lang': wrapper_block.lang}
+            
+            callers_of[current_pattern].append((caller_id, call_line))
+
+            if caller_name not in processed_patterns:
+                processed_patterns.add(caller_name)
+                queue.append((caller_name, level + 1, wrapper_block.lang.extensions))
+
+    # --- Invert graph for printing ---
+    callees_of = {node_id: [] for node_id in nodes}
+    all_callee_names = set(callers_of.keys())
+
+    for callee_name, caller_list in callers_of.items():
+        for caller_id, call_line in caller_list:
+            if caller_id in callees_of:
+                callees_of[caller_id].append({'name': callee_name, 'line': call_line})
+
+    # --- Find roots ---
+    all_caller_ids = set(nodes.keys())
+    callee_ids_of_callers = set()
+    for name in all_callee_names:
+        for node_id, node_info in nodes.items():
+            if node_info['name'] == name:
+                # This node is a callee of another node in the graph
+                if name != pattern: # The original pattern can also be a root
+                    callee_ids_of_callers.add(node_id)
+    
+    root_ids = all_caller_ids - callee_ids_of_callers
+
+    # --- Print from roots ---
     print(f"Call tree for '{pattern}':")
-    print(pattern)
-    tree = build_call_tree(pattern, search_path, set(), extensions=None, level=0, max_level=max_level)
-    print_dict_tree(tree)
-    debug(f"search_tree: Finished for pattern '{pattern}'")
+    if not root_ids and not callees_of:
+         print(f"No callers found for '{pattern}'.")
+         return
+
+    if not root_ids and nodes:
+        root_ids = list(nodes.keys())
+
+
+    for root_id in root_ids:
+        print(nodes[root_id]['name'])
+        print_top_down_tree(root_id, callees_of, nodes, set(), "")
+        print("-" * 20)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
