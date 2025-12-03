@@ -143,7 +143,7 @@ def get_match(pattern:str, place: str, extensions: list[str] = None) -> list[Lin
         line_num = int(line_num.strip())
         content = content.rstrip()
 
-        res.append(Line(file_name, line_num - 1, content))
+        res.append(Line(file_name, line_num - 1, content, highlight=pattern))
 
     return res
 
@@ -552,7 +552,6 @@ def search_grep(pattern:str, path:str):
     lines = get_match(pattern, path)
     if lines:
         for line in lines:
-            line.highlight = pattern
             result.add(line)
         result.show()
 
@@ -567,8 +566,6 @@ def search_def(pattern:str):
 
         if not lang:
             continue
-
-        l.highlight = pattern
 
         res = lang.get_define(l, pattern)
         if res:
@@ -587,8 +584,6 @@ def search_wrapper(pattern:str):
 
         if not lang:
             continue
-
-        l.highlight = pattern
 
         res = lang.get_wrapper(l)
         if res:
@@ -681,6 +676,8 @@ def search_tree(pattern: str, max_level: int = 10):
             callers_of[current_pattern] = []
 
         for wrapper_block, call_line in caller_info_list:
+            if level > 0:
+                call_line.highlight = None
 
             caller_name = wrapper_block.lang.extract_function_name(wrapper_block.start)
             if not caller_name or caller_name in wrapper_block.lang.keywords:
