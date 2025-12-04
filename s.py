@@ -563,6 +563,8 @@ def search_grep(pattern:str, path:str):
             result.add(line)
         result.show()
 
+def search_def(pattern:str):
+
     lines = get_match(pattern, "./")
 
     if not lines:
