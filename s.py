@@ -49,9 +49,11 @@ class Line:
         self.index = index
         self.content = content
         self.highlight = highlight
+        self.highlight2 = None
 
     def clone(self):
         cloned = Line(self.file_name, self.index, self.content, self.highlight)
+        cloned.highlight2 = self.highlight2
         return cloned
 
     def __eq__(self, other):
@@ -67,11 +69,17 @@ class Line:
 
     def get_highlighted_content(self) -> str:
         RED = "\033[0;31m"
+        BLUE = "\033[0;34m"
         RESET = "\033[0m"
 
+        content = self.content
+        if self.highlight2:
+            content = re.sub(self.highlight2, f"{BLUE}\\g<0>{RESET}", content)
+
         if self.highlight:
-            return re.sub(self.highlight, f"{RED}\\g<0>{RESET}", self.content)
-        return self.content
+            content = re.sub(self.highlight, f"{RED}\\g<0>{RESET}", content)
+        
+        return content
 
 
     def get_indentation_pattern(self, suffix: str) -> str:
@@ -119,6 +127,8 @@ class Line:
     def merge(self, other):
         if other.highlight:
             self.highlight = other.highlight
+        if other.highlight2:
+            self.highlight2 = other.highlight2
 
 def get_match(pattern:str, place: str, extensions: list[str] = None) -> list[Line]:
 
@@ -640,7 +650,15 @@ def print_top_down_tree(caller_id: str, callees_of: dict, nodes: dict, visited_i
                 callee_id = n_id
                 break
 
-        print(f"{prefix}{connector}{call_line.get_highlighted_content().strip()} ({call_line.file_name}:{call_line.index+1})")
+        if callee_id and callee_id in nodes:
+            print(f"{prefix}{connector}{nodes[callee_id]['line'].get_highlighted_content().strip()} ({nodes[callee_id]['line'].file_name}:{nodes[callee_id]['line'].index+1})")
+
+            new_prefix = prefix + ("    " if is_last else "│   ")
+            child_connector = "    "
+            print(f"{new_prefix}{child_connector}{call_line.get_highlighted_content().strip()} ({call_line.file_name}:{call_line.index+1})")
+        else:
+            print(f"{prefix}{connector}{call_line.get_highlighted_content().strip()} ({call_line.file_name}:{call_line.index+1})")
+
         
         if callee_id:
             new_prefix = prefix + ("    " if is_last else "│   ")
@@ -681,11 +699,12 @@ def search_tree(pattern: str, max_level: int = 10):
             if not caller_name or caller_name in wrapper_block.lang.keywords:
                 continue
             
+            wrapper_block.start.highlight2 = r"\b" + caller_name + r"\b"
             caller_id = f"{wrapper_block.start.file_name}:{wrapper_block.start.index}"
             debug(f"caller_id = {caller_id}")
 
             if caller_id not in nodes:
-                nodes[caller_id] = {'name': caller_name, 'lang': wrapper_block.lang}
+                nodes[caller_id] = {'name': caller_name, 'lang': wrapper_block.lang, 'line': wrapper_block.start}
             
             callers_of[current_pattern].append((caller_id, call_line))
 
@@ -725,7 +744,8 @@ def search_tree(pattern: str, max_level: int = 10):
 
 
     for root_id in root_ids:
-        print(nodes[root_id]['name'])
+        line = nodes[root_id]['line']
+        print(f"{line.get_highlighted_content().strip()} ({line.file_name}:{line.index+1})")
         print_top_down_tree(root_id, callees_of, nodes, set(), "")
         print("-" * 20)
 
