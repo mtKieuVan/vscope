@@ -563,8 +563,7 @@ def search_grep(pattern:str, path:str):
             result.add(line)
         result.show()
 
-def search_def(pattern:str):
-    lines = get_match(pattern, "../sipp")
+    lines = get_match(pattern, "./")
 
     if not lines:
         return
@@ -582,7 +581,7 @@ def search_def(pattern:str):
       
 def search_wrapper(pattern:str):
 
-    lines = get_match(pattern, "../sipp")
+    lines = get_match(pattern, "./")
 
     if not lines:
         return
@@ -667,7 +666,7 @@ def print_top_down_tree(caller_id: str, callees_of: dict, nodes: dict, visited_i
 
 def search_tree(pattern: str, max_level: int = 10):
     debug(f"search_tree: Starting for pattern '{pattern}' with max level {max_level}")
-    search_path = "../sipp"
+    search_path = "./"
 
     nodes = {}
     callers_of = {}
@@ -756,7 +755,7 @@ if __name__ == "__main__":
         formatter_class=argparse.RawTextHelpFormatter
     )
     parser.add_argument("-q", "--quiet", action="store_true", help="Suppress file and line number prefixes in output.")
-    parser.add_argument("-f", "--path", default="../sipp", help="Path to search in for 'grep' command.")
+    parser.add_argument("-f", "--path", default="./", help="Path to search in for 'grep' command.")
     parser.add_argument("-l", "--level", type=int, default=5, help="Maximum recursion depth for 'tree' command.")
     
     parser.add_argument("command_or_pattern", help="Command ('def', 'grep', 'tree') or a pattern for a wrapper search.")
