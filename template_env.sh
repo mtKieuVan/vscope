@@ -1,4 +1,4 @@
-export WORKDIR="${HOME}/Repositories"
+export WORKDIR="${HOME}/"
 
 export SYNC_SERVER=""
 
