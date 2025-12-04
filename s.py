@@ -513,12 +513,10 @@ class Cpp (Language):
 
         return blk
 
-    def get_wrapper(self, line: Line) -> Block:
-        return self._get_function_wrapper(line)
+    def get_function_wrapper(self, line: Line) -> Block:
 
-    def _get_function_wrapper(self, line: Line) -> Block:
-
-        function_start_pattern = r"^(?!.*\)\s*;)\s*[A-Za-z_][\w\s\*\(\)]*\s+(\w*::)*\w+\s*\("
+        #function_start_pattern = r"^(?!.*\)\s*;)\s*[A-Za-z_][\w\s\*\(\)]*\s+(\w*::)*\w+\s*\("
+        function_start_pattern = r"^(?!.*\)\s*;)(?!\s*(?:if|else|for|while|switch|catch|return)\b)(?:\s*[A-Za-z_][\w\s\*\(\):<>]*\s+(?:\w+::)*\w+\s*\(|(?:\w+::)*\w+\s*\()"
         
         # If the line itself is a function definition, it can't have a wrapper in this context.
         if line.match(function_start_pattern):
@@ -585,7 +583,7 @@ def search_wrapper(pattern:str):
         if not lang:
             continue
 
-        res = lang.get_wrapper(l)
+        res = lang.get_function_wrapper(l)
         if res:
             result.add_block(res)
     result.show()
@@ -606,7 +604,7 @@ def get_caller_blocks(pattern: str, search_path: str, extensions: list[str] = No
             debug(f"get_caller_blocks: No language found for file '{line.file_name}'")
             continue
 
-        wrapper_block = lang.get_wrapper(line)
+        wrapper_block = lang.get_function_wrapper(line)
         if not wrapper_block or not wrapper_block.start:
             debug(f"get_caller_blocks: No wrapper block found for line '{line.content.strip()}' (where pattern was found)")
             continue
@@ -684,6 +682,7 @@ def search_tree(pattern: str, max_level: int = 10):
                 continue
             
             caller_id = f"{wrapper_block.start.file_name}:{wrapper_block.start.index}"
+            debug(f"caller_id = {caller_id}")
 
             if caller_id not in nodes:
                 nodes[caller_id] = {'name': caller_name, 'lang': wrapper_block.lang}
