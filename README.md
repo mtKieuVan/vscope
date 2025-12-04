@@ -4,7 +4,14 @@
 
 Ví dụ:
 ```
-
+int main(int argc, char* argv[]) (../sipp/src/sipp_unittest.cpp:26)
+└── scenario::scenario(char * filename, int deflt) (../sipp/src/scenario.cpp:696)
+       main_scenario = new scenario(0, 0); (../sipp/src/sipp_unittest.cpp:30)
+   └── void scenario::getCommonAttributes(message *message) (../sipp/src/scenario.cpp:1854)
+           getCommonAttributes(nopmsg); (../sipp/src/scenario.cpp:821)
+       └── bool call::lost(int index) (../sipp/src/call.cpp:1417)
+               message -> lost = get_double(ptr, "lost percentage"); (../sipp/src/scenario.cpp:1862)
+           └── srand((unsigned int) time(nullptr)); (../sipp/src/call.cpp:1433)
 ```
 
 Debug log:
