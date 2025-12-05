@@ -1,4 +1,5 @@
 env.sh
 .bashrc
 test.c
+init
 __pycache__/

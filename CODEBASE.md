@@ -2,7 +2,7 @@
 
 ## Search tree
 
-Ví dụ:
+Ví dụ output:
 ```
 int main(int argc, char* argv[]) (../sipp/src/sipp_unittest.cpp:26)
 └── scenario::scenario(char * filename, int deflt) (../sipp/src/scenario.cpp:696)
