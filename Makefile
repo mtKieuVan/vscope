@@ -1,6 +1,7 @@
 .PHONY: lint clean
 
 init:
+	cp template_env.sh env.sh
 	@TOOLDIR=$$(pwd); \
 	echo "export TOOLDIR=$$TOOLDIR" >> ~/.bashrc ; \
 	echo "source $$TOOLDIR/toolbox.sh" >> ~/.bashrc
