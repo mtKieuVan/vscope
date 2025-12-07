@@ -13,5 +13,5 @@ clean:
 	@rm ./init
 
 lint:
-	
+	flake8 s.py	
 
