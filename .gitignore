@@ -3,3 +3,4 @@ env.sh
 test.c
 init
 __pycache__/
+.venv
