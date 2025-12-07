@@ -1,4 +1,4 @@
-.PHONY: lint clean
+.PHONY: lint clean install-deps
 
 init:
 	cp template_env.sh env.sh
@@ -12,6 +12,8 @@ clean:
 	@sed -i '/TOOLDIR/d;/toolbox\.sh/d' ~/.bashrc
 	@rm ./init
 
-lint:
-	flake8 s.py	
+install-deps:
+	pip install -r requirements.txt
 
+lint: install-deps
+	flake8 s.py
