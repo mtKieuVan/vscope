@@ -6,7 +6,7 @@ import os
 from typing import Union
 
 def debug(fmt):
-    print(f"Debug: {fmt}")
+    #print(f"Debug: {fmt}")
     return
 
 QUIET = False
