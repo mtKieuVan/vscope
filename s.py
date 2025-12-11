@@ -6,7 +6,7 @@ import os
 from typing import Union
 
 def debug(fmt):
-    #print(f"Debug: {fmt}")
+    print(f"Debug: {fmt}")
     return
 
 QUIET = False
@@ -498,64 +498,56 @@ class Cpp (Language):
         return None
 
     def get_nested_wrapper (self, line: Line) -> Block :
-        debug(f"Entering get_nested_wrapper for line: {line}")
+
         blk = self.get_function_wrapper(line)
 
         if not blk:
-            debug(f"No function wrapper found for line: {line}, returning None")
             return None
+
+        open_brace_line = None
+        for l in blk.lines:
+            if '{' in l.content:
+                open_brace_line = l
+                break
+
+        if not open_brace_line:
+            return blk
 
         brace_count = 0
         cursor = line.clone()
         open_brace_list = []
-        debug(f"Starting upward scan from {cursor.file_name}:{cursor.index + 1} to find opening braces. Wrapper block start: {blk.lines[0].file_name}:{blk.lines[0].index + 1}")
-        while cursor.move_up() and cursor != blk.lines[1]:
-            debug(f"Upward scan: Current line {cursor.file_name}:{cursor.index + 1}: '{cursor.content.strip()}', brace_count before: {brace_count}")
+        while cursor.move_up() and cursor != open_brace_line:
             brace_count += cursor.count("{") - cursor.count("}")           
             if brace_count > 0:
-                debug(f"Found opening brace at {cursor.file_name}:{cursor.index + 1}. Adding to open_brace_list.")
                 open_brace_list.append(cursor.clone())
                 brace_count = 0 # Reset brace_count after finding a wrapper
-            debug(f"Upward scan: Current line {cursor.file_name}:{cursor.index + 1}: '{cursor.content.strip()}', brace_count after: {brace_count}")
 
         brace_count = 0
         cursor = line.clone()
         close_brace_list = [] # This logic is commented out as its purpose in nested wrappers needs re-evaluation
-        debug(f"Starting downward scan from {cursor.file_name}:{cursor.index + 1} to find closing braces. Wrapper block end: {blk.end.file_name}:{blk.end.index + 1}")
         while cursor.move_down() and cursor != blk.end:
-            debug(f"Downward scan: Current line {cursor.file_name}:{cursor.index + 1}: '{cursor.content.strip()}', brace_count before: {brace_count}")
             brace_count += cursor.count("}") - cursor.count("{") 
             if brace_count > 0:
-                debug(f"Found closing brace at {cursor.file_name}:{cursor.index + 1}. Adding to close_brace_list.")
                 close_brace_list.insert(0, cursor.clone()) # Insert at beginning to maintain order relative to original file position
                 brace_count = 0 # Reset brace_count after finding a wrapper
-            debug(f"Downward scan: Current line {cursor.file_name}:{cursor.index + 1}: '{cursor.content.strip()}', brace_count after: {brace_count}")
 
-        debug(f"Open brace lines found: {[str(l) for l in open_brace_list]}")
-        debug(f"Close brace lines found: {[str(l) for l in close_brace_list]}")
 
         for brace_line in open_brace_list:
             sub_blk = Block(self, brace_line) # Corrected: pass self.lang
-            debug(f"Processing open brace line: {brace_line}")
-            if not sub_blk.fill_up_until(r"^\s*(if|else|for|while|do|switch|try|catch|enum|struct|union)\b"): # Refined regex and removed stop pattern
-                debug(f"Failed to fill up until control structure for {brace_line}")
+            if not sub_blk.fill_up_until(r"^\s*(if|else|for|while|do|switch|try|catch)\b"): # Refined regex and removed stop pattern
                 continue
+            debug (f"Found sub lock: {sub_blk.start} for line {line}")
+            if sub_blk.start.match(r"^\s*switch"):
+                debug("Sub lock start with switch")
+                case_blk = Block(self, line)
+                case_blk.get_start_with(r"^\s*(case .*|default)\s*:")
+                blk += case_blk
+
             blk += sub_blk
-            debug(f"Added sub-block for {brace_line}. Current blk content:\n{blk}")
 
         for brace_line in close_brace_list:
            blk.add(brace_line)
 
-        # The existing logic for close_brace_list is problematic, it's not clear what it's trying to achieve
-        # and how it relates to the nested wrapper feature. For now, I'm commenting it out as it seems incorrect
-        # and would likely require a different approach for proper nesting detection.
-        # for brace_line in close_brace_list:
-        #     # This part needs careful re-evaluation for nested wrappers.
-        #     # The logic for get_nested_wrapper should focus on finding the *boundaries*
-        #     # of the nested blocks relative to the *function wrapper*.
-        #     pass
-
-        debug(f"Exiting get_nested_wrapper. Final block content:\n{blk}")
         return blk
 
         
