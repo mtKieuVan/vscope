@@ -464,7 +464,7 @@ class Cpp (Language):
 
         # function, with pattern in the name
         # The name part is complex, allowing for namespaces: (\w*::)*\w*PATTERN\w*
-        if line.match(r"^(?!.*\)\s*;)\s*[A-Za-z_][\w\s\*\(\)]*\s+(\w*::)?" + pattern + r"\s*\("):
+        if line.match(r"^(?!.*\)\s*;)\s*[A-Za-z_][\w\s\*\(\)]*\s+(\w*::)?" + pattern + r"\s*\(") or line.match(r"^(?!.*\)\s*;)" + pattern + r"\s*\("):
             return self._get_define_function(line)
 
         # struct/enum/union, with pattern in the name
@@ -565,6 +565,12 @@ class Cpp (Language):
         end_brace_pattern = blk.start.get_indentation_pattern(r"}.*")
 
         blk.fill_down_until(end_brace_pattern)
+
+        if blk.start.match(r"^\w+\s*\("):
+            return_type_line = blk.start.clone()
+            return_type_line.move_up()
+            blk.add(return_type_line)
+
         return blk
 
     def _get_define_struct_enum_union(self, line: Line) -> Block:
