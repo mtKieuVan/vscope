@@ -464,7 +464,7 @@ class Cpp (Language):
 
         # function, with pattern in the name
         # The name part is complex, allowing for namespaces: (\w*::)*\w*PATTERN\w*
-        if line.match(r"^(?!.*\)\s*;)\s*[A-Za-z_][\w\s\*\(\)]*\s+(\w*::)?" + pattern + r"\s*\(") or line.match(r"^(?!.*\)\s*;)" + pattern + r"\s*\("):
+        if line.match(r"^(?!.*\)\s*;)\s*[A-Za-z_][\w\s\*\(\):<>]*\s+(\w*::)*\**\s*" + pattern + r"\s*\(") or line.match(r"^(?!.*\)\s*;)" + pattern + r"\s*\("):
             return self._get_define_function(line)
 
         # struct/enum/union, with pattern in the name
