@@ -852,18 +852,53 @@ def search_tree(pattern: str, max_level: int = 10):
         print_top_down_tree(root_id, callees_of, nodes, set(), "")
         print("-" * 20)
 
+def search_var(pattern: str):
+    """
+    Search for the declaration of a global variable and all nested blocks
+    that assign value or using value of it.
+    """
+    all_occurrences = get_match(r"\b" + pattern + r"\b", "./")
+    if not all_occurrences:
+        print(f"No occurrences found for '{pattern}'.")
+        return
+
+    found_global = False
+    for line in all_occurrences:
+        lang = Language.get_by_filename(line.file_name)
+        if not lang:
+            continue
+
+        line.highlight = r"\b" + pattern + r"\b"
+        
+        block = lang.get_nested_wrapper(line)
+        
+        if block:
+            # This line is inside a function.
+            block.add(line)
+            result.add_block(block)
+        else:
+            # This line is NOT inside a function. Assume global scope.
+            found_global = True
+            result.add(line)
+
+    if not found_global:
+        print(f"Warning: No global declaration or usage found for '{pattern}'. Showing local usages.")
+
+    result.show()
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Search for code. By default, it searches for nested wrapper blocks. Use 'wrap', 'def', 'grep', or 'tree' for other searches.",
-        epilog="Examples:\n  s my_pattern\n  s wrap my_function_name\n  s def my_variable\n  s grep 'some text' -f /path/to/search\n  s tree my_function -l 5",
+        description="Search for code. By default, it searches for nested wrapper blocks. Use 'wrap', 'def', 'grep', 'tree', or 'var' for other searches.",
+        epilog="Examples:\n  s my_pattern\n  s wrap my_function_name\n  s def my_variable\n  s grep 'some text' -f /path/to/search\n  s tree my_function -l 5\n  s var my_global_variable",
         formatter_class=argparse.RawTextHelpFormatter
     )
     parser.add_argument("-q", "--quiet", action="store_true", help="Suppress file and line number prefixes in output.")
     parser.add_argument("-f", "--path", default="./", help="Path to search in for 'grep' command.")
     parser.add_argument("-l", "--level", type=int, default=5, help="Maximum recursion depth for 'tree' command.")
     
-    parser.add_argument("command_or_pattern", help="Command ('wrap', 'def', 'grep', 'tree') or a pattern for a nested wrapper search.")
-    parser.add_argument("pattern", nargs="?", help="Pattern for 'wrap', 'def', 'grep', or 'tree' command.")
+    parser.add_argument("command_or_pattern", help="Command ('wrap', 'def', 'grep', 'tree', 'var') or a pattern for a nested wrapper search.")
+    parser.add_argument("pattern", nargs="?", help="Pattern for 'wrap', 'def', 'grep', 'tree', or 'var' command.")
 
     args = parser.parse_args()
 
@@ -881,11 +916,15 @@ if __name__ == "__main__":
         if not args.pattern:
             parser.error("'tree' command requires a pattern.")
         search_tree(args.pattern, args.level)
+    elif args.command_or_pattern == "var":
+        if not args.pattern:
+            parser.error("'var' command requires a pattern.")
+        search_var(args.pattern)
     elif args.command_or_pattern == "wrap":
         if not args.pattern:
             parser.error("'wrap' command requires a pattern.")
         search_wrapper(args.pattern)
     else:
         if args.pattern:
-            parser.error(f"Too many arguments. Did you mean 'def {args.command_or_pattern}', 'grep {args.command_or_pattern}', or 'wrap {args.command_or_pattern}'?")
+            parser.error(f"Too many arguments. Did you mean 'def {args.command_or_pattern}', 'grep {args.command_or_pattern}', 'wrap {args.command_or_pattern}', or 'var {args.command_or_pattern}'?")
         search_nested_wrapper(args.command_or_pattern)
